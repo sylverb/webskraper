@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cover Scraper — ScreenScraper</title>
+<style>
+  :root { color-scheme: light dark; }
+  * { box-sizing: border-box; }
+  body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+         max-width: 1180px; margin: 0 auto; padding: 24px; line-height: 1.5; }
+  h1 { font-size: 1.4rem; margin: 0 0 6px; }
+  header { margin-bottom: 8px; }
+  p.lead { opacity: .85; margin: 0; }
+  fieldset { border: 1px solid #8884; border-radius: 10px; padding: 14px 16px; margin: 0 0 16px; }
+  legend { padding: 0 6px; font-weight: 600; }
+  label { display: block; font-size: .85rem; margin: 10px 0 2px; opacity: .85; }
+  input, select { width: 100%; padding: 8px 10px; border: 1px solid #8886; border-radius: 8px;
+                  background: transparent; color: inherit; font: inherit; }
+  input[type=checkbox] { width: auto; }
+  .row { display: flex; gap: 12px; flex-wrap: wrap; }
+  .row > div { flex: 1 1 180px; }
+  .check { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
+  .check label { margin: 0; }
+  .topbar { display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .topbar label { margin: 0; }
+  .topbar select { width: auto; }
+
+  /* Two-column desktop layout */
+  .layout { display: grid; grid-template-columns: 1fr 1.15fr; gap: 24px; align-items: start; }
+  .col { min-width: 0; }
+  @media (max-width: 800px) { .layout { grid-template-columns: 1fr; } }
+
+  .actions { display: flex; gap: 10px; }
+  button { margin-top: 4px; padding: 10px 18px; border: 0; border-radius: 8px;
+           background: #2563eb; color: #fff; font-weight: 600; cursor: pointer; font-size: 1rem; }
+  button.sec { background: #64748b; }
+  button:disabled { opacity: .5; cursor: default; }
+  progress { width: 100%; height: 14px; }
+  #status { font-size: .85rem; opacity: .8; margin: 6px 0 12px; min-height: 1.2em; }
+  #log { height: 340px; overflow: auto; background: #8881; border-radius: 8px; padding: 10px;
+         font-size: .8rem; white-space: pre-wrap; margin-bottom: 16px;
+         font-family: ui-monospace, Menlo, Consolas, monospace; }
+  #previewName { margin-bottom: 8px; }
+  #previewWrap { display: flex; justify-content: center; align-items: center; min-height: 120px;
+                 border-radius: 8px; padding: 8px;
+                 background-image: conic-gradient(#8883 25%, transparent 0 50%, #8883 0 75%, transparent 0);
+                 background-size: 20px 20px; }
+  #preview { max-width: 100%; max-height: 360px; display: none; border-radius: 6px;
+             box-shadow: 0 2px 10px #0004; }
+  .note { font-size: .82rem; opacity: .8; border-left: 3px solid #8888; padding-left: 12px; }
+  code { background: #8882; padding: 1px 5px; border-radius: 4px; }
+</style>
+</head>
+<body>
+  <div class="topbar">
+    <label for="lang" data-i18n="langLabel">Language</label>
+    <select id="lang">
+      <option value="en">English</option>
+      <option value="fr">Français</option>
+    </select>
+  </div>
+
+  <header>
+    <h1 data-i18n="title">Cover Scraper — ScreenScraper</h1>
+    <p class="lead" data-i18n-html="lead"></p>
+  </header>
+
+  <div class="layout">
+    <!-- Left column: configuration -->
+    <section class="col">
+      <fieldset>
+        <legend data-i18n="folderLegend">ROM folder</legend>
+        <input id="folder" type="file" webkitdirectory directory multiple>
+        <div class="check">
+          <input id="skipExisting" type="checkbox" checked>
+          <label for="skipExisting" data-i18n="skipExisting">Ignore ROMs that already have an image</label>
+        </div>
+        <div class="check">
+          <input id="useCache" type="checkbox" checked>
+          <label for="useCache" data-i18n="useCacheLabel">Use local cache</label>
+        </div>
+        <button id="clearCache" type="button" class="sec" data-i18n="clearCache">Clear cache</button>
+        <span id="cacheStats" class="note" style="display:block; margin-top:8px"></span>
+      </fieldset>
+
+      <fieldset>
+        <legend data-i18n="outputLegend">Output type</legend>
+        <label data-i18n="sourceLabel">Source</label>
+        <select id="source">
+          <option value="ss" data-i18n="sourceSs">In-game image</option>
+          <option value="box" data-i18n="sourceBox">Box art</option>
+          <option value="mix3" data-i18n="sourceMix3">Mix — 3 images</option>
+          <option value="mix4" data-i18n="sourceMix4">Mix — 4 images</option>
+          <option value="mix5" data-i18n="sourceMix5">Mix — 5 images</option>
+          <option value="mixcustom" data-i18n="sourceMixCustom">Mix — custom file</option>
+        </select>
+        <div id="mixRow" style="display:none">
+          <label data-i18n="mixLabel">Composition XML file</label>
+          <input id="mixxml" type="file" accept=".xml">
+        </div>
+      </fieldset>
+
+      <form id="run-form" autocomplete="on">
+        <fieldset>
+          <legend data-i18n="credsLegend">ScreenScraper credentials</legend>
+          <div class="row">
+            <div>
+              <label data-i18n="ssidLabel">User name</label>
+              <input id="ssid" name="username" type="text" autocomplete="username">
+            </div>
+            <div>
+              <label data-i18n="sspasswordLabel">User password</label>
+              <input id="sspassword" name="password" type="password" autocomplete="current-password">
+            </div>
+          </div>
+          <label data-i18n="forceSysLabel">System</label>
+          <select id="forceSys"></select>
+          <p class="note" data-i18n-html="credsNote" style="margin-top:12px"></p>
+        </fieldset>
+
+        <div class="actions">
+          <button id="run" type="submit" data-i18n="runBtn">Get covers</button>
+          <button id="stop" class="sec" type="button" disabled data-i18n="stopBtn">Stop</button>
+        </div>
+      </form>
+    </section>
+
+    <!-- Right column: work area -->
+    <section class="col">
+      <progress id="bar" value="0" max="1"></progress>
+      <div id="status"></div>
+
+      <fieldset>
+        <legend data-i18n="previewLegend">Last cover</legend>
+        <div id="previewName" class="note">—</div>
+        <div id="previewWrap"><img id="preview" alt=""></div>
+      </fieldset>
+
+      <div id="log"></div>
+
+      <fieldset>
+        <legend data-i18n="notesLegend">Notes</legend>
+        <p class="note" data-i18n-html="notes"></p>
+      </fieldset>
+    </section>
+  </div>
+
+  <!-- CDN libs as classic scripts (expose window.JSZip / window.hashwasm) -->
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/hash-wasm@4/dist/index.umd.min.js"></script>
+  <!-- App entry point (ES modules) -->
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
