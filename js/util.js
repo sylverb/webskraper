@@ -13,8 +13,9 @@ export const stem = (name) => {
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // canvas.toBlob is callback-based; wrap it in a promise.
-export const canvasToBlob = (canvas, type = "image/png") =>
-  new Promise((resolve) => canvas.toBlob(resolve, type));
+// `quality` (0..1) is used for image/jpeg and image/webp, ignored for png.
+export const canvasToBlob = (canvas, type = "image/png", quality) =>
+  new Promise((resolve) => canvas.toBlob(resolve, type, quality));
 
 export function downloadBlob(blob, filename) {
   const a = document.createElement("a");

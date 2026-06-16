@@ -8,6 +8,7 @@ import { MixResolver, renderComposition, isValidMix } from "./mix-engine.js";
 import { BUILTIN_MIXES } from "./mixes.js";
 import { buildPlan } from "./scanner.js";
 import { cache, clearCache, cacheStats } from "./cache.js";
+import { toGWCover, gwOutputName, MAX_BYTES as GW_MAX_BYTES } from "./gw.js";
 import { t, initI18n } from "./i18n.js";
 
 const $ = (id) => document.getElementById(id);
@@ -112,6 +113,7 @@ async function run() {
   $("stop").disabled = false;
 
   const useCache = $("useCache").checked;
+  const convert = $("convert").value; // "none" | "gw"
   const creds = readCreds();
   const limiter = new RateLimiter(20);
   const client = new ScreenScraperClient({ creds, limiter });
@@ -150,6 +152,21 @@ async function run() {
 
   const hashers = await createHashers();
   const zip = new window.JSZip();
+
+  // Add one cover to the zip, applying the chosen output format.
+  async function addCover(rom, blob, defaultName) {
+    let out = blob;
+    let name = defaultName;
+    if (convert === "gw") {
+      out = await toGWCover(blob);
+      name = gwOutputName(rom.parts, stem(rom.file.name));
+      if (out && out.size > GW_MAX_BYTES)
+        log(t("gwTooBig", { name: rom.file.name, size: formatBytes(out.size) }));
+    }
+    zip.file(name, out);
+    showPreview(blob, rom.file.name); // always preview the full-size original
+  }
+
   let ok = 0, miss = 0, fail = 0, done = 0;
   bar.max = roms.length;
   bar.value = 0;
@@ -204,8 +221,7 @@ async function run() {
           const got = [...resolver.cache.values()].filter(Boolean).length;
           if (got === 0) log(t("mixEmpty", { name: rom.file.name }));
           const blob = await canvasToBlob(canvas, "image/png");
-          zip.file(base.concat(baseName + ".png").join("/"), blob);
-          showPreview(blob, rom.file.name);
+          await addCover(rom, blob, base.concat(baseName + ".png").join("/"));
           log(t("mixOk", { name: rom.file.name, n: got }));
           ok++;
         } else {
@@ -215,8 +231,7 @@ async function run() {
           const blob = await fetchMediaBlob(client, media.url, useCache);
           if (!blob) { log(t("imgFailed", { status: "?", name: rom.file.name })); fail++; continue; }
           const fmt = (media.format || "png").toLowerCase();
-          zip.file(base.concat(baseName + "." + fmt).join("/"), blob);
-          showPreview(blob, rom.file.name);
+          await addCover(rom, blob, base.concat(baseName + "." + fmt).join("/"));
           log(t("ssOk", { name: rom.file.name }));
           ok++;
         }
