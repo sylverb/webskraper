@@ -29,27 +29,51 @@ export class ScreenScraperClient {
     return this.get(API + "jeuInfos.php?" + this.params(extra));
   }
 
-  // Read the account's per-minute / per-day limits, or null on failure.
+  // Read the account's limits AND validate the user login.
+  // Returns { status: "ok"|"bad"|"unknown", perMin, perDay, today }.
+  //   ok      = valid ssuser block returned
+  //   bad     = login rejected (401/403/400 or "Erreur de login" body)
+  //   unknown = network / server error, no verdict on the credentials
   async userQuota() {
+    const none = { perMin: null, perDay: null, today: null };
+    let r;
     try {
-      const r = await this.get(API + "ssuserInfos.php?" + this.params());
-      if (!r.ok) return null;
-      const u = (await r.json()).response.ssuser;
-      const gi = (...keys) => {
-        for (const k of keys) {
-          const v = parseInt(u[k], 10);
-          if (!isNaN(v)) return v;
-        }
-        return null;
-      };
-      return {
-        perMin: gi("maxrequestspermin", "maxrequestsperdmin"),
-        perDay: gi("maxrequestsperday"),
-        today: gi("requeststoday"),
-      };
+      r = await this.get(API + "ssuserInfos.php?" + this.params());
     } catch (e) {
-      return null;
+      return { status: "unknown", ...none };
     }
+    if ([400, 401, 403].includes(r.status)) return { status: "bad", ...none };
+    if (!r.ok) return { status: "unknown", ...none }; // 5xx etc. -> no verdict
+
+    let text;
+    try {
+      text = await r.text();
+    } catch (e) {
+      return { status: "unknown", ...none };
+    }
+    if (/^\s*Erreur de login/i.test(text)) return { status: "bad", ...none };
+
+    let u = null;
+    try {
+      u = JSON.parse(text).response.ssuser;
+    } catch (e) {
+      u = null;
+    }
+    if (!u || typeof u !== "object") return { status: "bad", ...none };
+
+    const gi = (...keys) => {
+      for (const k of keys) {
+        const v = parseInt(u[k], 10);
+        if (!isNaN(v)) return v;
+      }
+      return null;
+    };
+    return {
+      status: "ok",
+      perMin: gi("maxrequestspermin", "maxrequestsperdmin"),
+      perDay: gi("maxrequestsperday"),
+      today: gi("requeststoday"),
+    };
   }
 
   // Pick the best media of a given ScreenScraper type (by region preference).

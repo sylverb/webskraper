@@ -69,6 +69,32 @@ function readCreds() {
   return c;
 }
 
+// --- Optional account persistence -------------------------------------------
+// Stored in localStorage on this device. NOTE: the password is kept in clear
+// text, like any "remember me" box; only enable it on a device you trust.
+const ACCOUNT_KEY = "coverscraper.account";
+function saveAccount() {
+  const ssid = $("ssid").value.trim();
+  if (!ssid) return localStorage.removeItem(ACCOUNT_KEY);
+  localStorage.setItem(
+    ACCOUNT_KEY,
+    JSON.stringify({ ssid, sspassword: $("sspassword").value })
+  );
+}
+function forgetAccount() {
+  localStorage.removeItem(ACCOUNT_KEY);
+}
+function loadAccount() {
+  try {
+    const a = JSON.parse(localStorage.getItem(ACCOUNT_KEY) || "null");
+    if (a && a.ssid) {
+      $("ssid").value = a.ssid;
+      $("sspassword").value = a.sspassword || "";
+      $("remember").checked = true;
+    }
+  } catch (e) {}
+}
+
 // Get a media Blob, from the local cache if present, otherwise from the network
 // (and cache it). Returns null on failure or non-image (NOMEDIA) responses.
 async function fetchMediaBlob(client, url, useCache) {
@@ -115,12 +141,19 @@ async function run() {
   const useCache = $("useCache").checked;
   const convert = $("convert").value; // "none" | "gw"
   const creds = readCreds();
+  const hasAccount = !!(creds.ssid && creds.sspassword);
   const limiter = new RateLimiter(20);
   const client = new ScreenScraperClient({ creds, limiter });
   const fetchImage = makeImageFetcher(client, useCache);
 
-  // Rate limiter from the account quota.
+  // Rate limiter from the account quota (this call also validates the login).
   const q = await client.userQuota();
+  if (hasAccount && q.status === "bad") {
+    $("run").disabled = false;
+    $("stop").disabled = true;
+    alert(t("badAccount"));
+    return;
+  }
   if (q && q.perMin) {
     limiter.max = Math.max(1, Math.floor(q.perMin * 0.9));
     log(
@@ -266,6 +299,7 @@ $("source").addEventListener("change", () => {
 // save the ScreenScraper user name / password in its password manager.
 $("run-form").addEventListener("submit", (e) => {
   e.preventDefault();
+  if ($("remember").checked) saveAccount();
   run();
 });
 $("stop").addEventListener("click", () => {
@@ -332,6 +366,12 @@ async function initSystemPicker() {
     /* keep the fallback/cached list silently */
   }
 }
+
+// Account persistence: save/forget on toggle, prefill on load.
+$("remember").addEventListener("change", () =>
+  $("remember").checked ? saveAccount() : forgetAccount()
+);
+loadAccount();
 
 initSystemPicker();
 initI18n();
