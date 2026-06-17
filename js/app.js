@@ -4,7 +4,7 @@ import { SOFTNAME, SINGLE_MEDIA, devCreds, SYSTEMS } from "./config.js";
 import { RateLimiter } from "./rate-limiter.js";
 import { createHashers, hashFile } from "./hashing.js";
 import { ScreenScraperClient, FatalError, fetchSystems } from "./screenscraper.js";
-import { MixResolver, renderComposition, isValidMix } from "./mix-engine.js";
+import { MixResolver, renderComposition, isValidMix, gameRegionsFor } from "./mix-engine.js";
 import { BUILTIN_MIXES } from "./mixes.js";
 import { buildPlan } from "./scanner.js";
 import { cache, clearCache, cacheStats } from "./cache.js";
@@ -249,7 +249,8 @@ async function run() {
         const baseName = stem(rom.file.name);
 
         if (isMix) {
-          const resolver = new MixResolver(jeu, fetchImage);
+          const gameRegions = gameRegionsFor(rom.file.name, jeu);
+          const resolver = new MixResolver(jeu, fetchImage, undefined, gameRegions);
           const canvas = await renderComposition(mixXml, resolver);
           const got = [...resolver.cache.values()].filter(Boolean).length;
           if (got === 0) log(t("mixEmpty", { name: rom.file.name }));

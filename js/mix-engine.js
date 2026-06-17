@@ -3,6 +3,83 @@
 // IfOrientation). Composes images only (no text). Returns a <canvas>.
 import { RESOURCE_MAP, REGION_PREF } from "./config.js";
 
+// --- region flags (Region1 / Region2 slots) --------------------------------
+// Region names found in ROM filenames (No-Intro / GoodTools) -> flag codes,
+// mirroring Skraper's "extract regions from file name" behaviour.
+const REGION_NAME_MAP = {
+  world: "wor", usa: "us", us: "us", "united states": "us", europe: "eu",
+  japan: "jp", france: "fr", germany: "de", spain: "sp", italy: "it",
+  uk: "uk", "united kingdom": "uk", england: "uk", australia: "au",
+  korea: "kr", "south korea": "kr", china: "cn", "hong kong": "hk",
+  taiwan: "tw", brazil: "br", canada: "ca", netherlands: "nl", holland: "nl",
+  sweden: "se", norway: "no", denmark: "dk", finland: "fi", russia: "ru",
+  poland: "pl", portugal: "pt", greece: "gr", "czech republic": "cz",
+  czech: "cz", hungary: "hu", ireland: "ie", israel: "il", india: "in",
+  mexico: "mx", argentina: "ar", chile: "cl", colombia: "co",
+  "new zealand": "nz", austria: "at", belgium: "be", switzerland: "ch",
+  croatia: "hr", slovenia: "si", slovakia: "sk", serbia: "rs", ukraine: "ua",
+  romania: "ro", bulgaria: "bg", estonia: "ee", lithuania: "lt",
+  luxembourg: "lu", iceland: "is", "bosnia and herzegovina": "ba",
+  albania: "al", armenia: "am", azerbaijan: "az", bolivia: "bo", cuba: "cu",
+  honduras: "hn", venezuela: "ve", "south africa": "za",
+  "united arab emirates": "ae",
+};
+// Single-letter GoodTools codes, only when the whole token is one letter.
+const REGION_LETTER_MAP = {
+  u: "us", e: "eu", j: "jp", w: "wor", f: "fr", g: "de", s: "sp", i: "it",
+  a: "au", k: "kr", c: "cn", n: "nl", b: "br",
+};
+
+// Ordered region codes from a ROM filename: tokens inside parentheses.
+export function extractRegions(fileName) {
+  const out = [];
+  const add = (code) => { if (code && !out.includes(code)) out.push(code); };
+  const groups = (fileName || "").match(/\(([^)]*)\)/g) || [];
+  for (const g of groups) {
+    for (let tok of g.slice(1, -1).split(/[,/]/)) {
+      tok = tok.trim();
+      if (!tok) continue;
+      const low = tok.toLowerCase();
+      if (REGION_NAME_MAP[low]) add(REGION_NAME_MAP[low]);
+      else if (tok.length === 1 && REGION_LETTER_MAP[low]) add(REGION_LETTER_MAP[low]);
+    }
+  }
+  return out;
+}
+
+// Ordered region codes for a game: filename first, else the game's media
+// regions ordered by preference.
+export function gameRegionsFor(fileName, jeu) {
+  let regs = extractRegions(fileName);
+  if (regs.length) return regs;
+  const present = [];
+  for (const m of (jeu && jeu.medias) || [])
+    if (m.region && !present.includes(m.region)) present.push(m.region);
+  regs = REGION_PREF.filter((r) => present.includes(r));
+  for (const r of present) if (!regs.includes(r)) regs.push(r);
+  return regs;
+}
+
+// Lazy flag module + decoded-bitmap cache (the base64 module is ~2 MB, so it
+// is only imported when a composition actually needs a flag).
+let _flagsPromise = null;
+const _flagBitmaps = new Map();
+async function loadFlagBitmap(code) {
+  if (!code) return null;
+  if (_flagBitmaps.has(code)) return _flagBitmaps.get(code);
+  let bmp = null;
+  try {
+    _flagsPromise ||= import("./flags.js").then((m) => m.FLAGS);
+    const FLAGS = await _flagsPromise;
+    const url = FLAGS[code];
+    if (url) bmp = await createImageBitmap(await (await fetch(url)).blob());
+  } catch (e) {
+    bmp = null;
+  }
+  _flagBitmaps.set(code, bmp);
+  return bmp;
+}
+
 // --- XML helpers (case-sensitive, like the Python ElementTree version) ---
 const childrenByTag = (el, tag) => [...el.children].filter((c) => c.tagName === tag);
 const firstChild = (el, tag) => childrenByTag(el, tag)[0] || null;
@@ -58,10 +135,12 @@ function collectChain(item) {
 // --- resolver: Skraper resource type -> ImageBitmap (or null) ---
 export class MixResolver {
   // fetchImage: async (url) => ImageBitmap | null
-  constructor(jeu, fetchImage, regions = REGION_PREF) {
+  // gameRegions: ordered region codes for this game (Region1, Region2, ...)
+  constructor(jeu, fetchImage, regions = REGION_PREF, gameRegions = []) {
     this.jeu = jeu;
     this.fetchImage = fetchImage;
     this.regions = regions;
+    this.gameRegions = gameRegions;
     this.cache = new Map();
     this.index = {};
     for (const m of jeu.medias || []) (this.index[m.type] ||= []).push(m);
@@ -79,6 +158,15 @@ export class MixResolver {
 
   async resolve(skraperType) {
     if (this.cache.has(skraperType)) return this.cache.get(skraperType);
+
+    // Region1 / Region2 -> flag of the game's 1st / 2nd region.
+    if (skraperType === "Region1" || skraperType === "Region2") {
+      const code = this.gameRegions[skraperType === "Region1" ? 0 : 1];
+      const flag = await loadFlagBitmap(code);
+      this.cache.set(skraperType, flag);
+      return flag;
+    }
+
     let img = null;
     for (const ssType of RESOURCE_MAP[skraperType] || []) {
       const media = this.best(ssType);
