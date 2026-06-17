@@ -339,28 +339,24 @@ function buildSystemPicker(list) {
   sel.value = prev;
 }
 
-// The full system list comes from ScreenScraper (cached 30 days in
+// The full system list comes from ScreenScraper (cached indefinitely in
 // localStorage). The built-in SYSTEMS list is the offline / API-down fallback.
 const SYS_CACHE_KEY = "coverscraper.systems";
-const SYS_TTL = 30 * 24 * 3600 * 1000;
 
 async function initSystemPicker() {
   let list = SYSTEMS;
-  let fresh = false;
   try {
     const obj = JSON.parse(localStorage.getItem(SYS_CACHE_KEY) || "null");
     if (obj && Array.isArray(obj.list) && obj.list.length) {
-      list = obj.list;
-      fresh = obj.ts && Date.now() - obj.ts < SYS_TTL;
+      buildSystemPicker(obj.list);
+      return;
     }
   } catch (e) {}
-  buildSystemPicker(list); // show something immediately
-
-  if (fresh) return; // cached list still recent, no API call needed
+  buildSystemPicker(list);
   try {
     const apiList = await fetchSystems({ ...devCreds(), softname: SOFTNAME });
     if (apiList.length) {
-      localStorage.setItem(SYS_CACHE_KEY, JSON.stringify({ ts: Date.now(), list: apiList }));
+      localStorage.setItem(SYS_CACHE_KEY, JSON.stringify({ list: apiList }));
       buildSystemPicker(apiList);
     }
   } catch (e) {
