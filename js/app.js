@@ -374,6 +374,19 @@ $("remember").addEventListener("change", () =>
 );
 loadAccount();
 
+// --- URL parameters ---------------------------------------------------------
+// Force the default output format via ?target=gw
+function applyUrlDefaults() {
+  try {
+    const p = new URLSearchParams(window.location.search || "");
+    if ((p.get("target") || "").toLowerCase() === "gw") $("convert").value = "gw";
+  } catch (e) {
+    /* ignore malformed URLSearchParams / unusual environments */
+  }
+}
+
+applyUrlDefaults();
+
 initSystemPicker();
 initI18n();
 refreshCacheStats();
